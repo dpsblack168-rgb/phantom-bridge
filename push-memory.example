@@ -1,0 +1,39 @@
+#!/bin/bash
+# push-memory: Push a memory snippet to Rovv via Tailscale msg-bridge
+# Usage: push-memory "memory content" [category] [tags]
+# Categories: user_pref, project, tool, general
+
+BRIDGE="${MEMORY_BRIDGE:-http://YOUR_ROVV_IP:8083}"
+text="$1"
+category="${2:-project}"
+tags="${3:-}"
+
+if [ -z "$text" ]; then
+    echo "Usage: push-memory \"memory content\" [category] [tags]"
+    exit 1
+fi
+
+# Auto-detect agent identity
+AGENT="${MEMORY_AGENT:-unknown}"
+HOSTNAME=$(hostname -s)
+
+ts=$(date -Iseconds)
+payload=$(python3 -c "
+import json, sys
+print(json.dumps({
+    'from': sys.argv[1],
+    'to': 'rovv',
+    'text': f'[{sys.argv[2]}] {sys.argv[3]}: {sys.argv[4]}'
+}))
+" "$AGENT" "$ts" "$category" "$text")
+
+resp=$(curl -s -X POST "${BRIDGE}/msg" \
+    -H "Content-Type: application/json" \
+    -d "$payload" 2>&1)
+
+if echo "$resp" | grep -q '"ok": true'; then
+    echo "✅ pushed to Rovv ($BRIDGE)"
+else
+    echo "❌ failed: $resp"
+    exit 1
+fi
