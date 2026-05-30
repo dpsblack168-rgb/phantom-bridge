@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 """nudge-watch: Bridge Hermes Periodic Nudge → msg-bridge → Rovv aggregation."""
-import hashlib, json, os, time, urllib.request
+import hashlib, json, os, re, time, urllib.request
 
 MEMORY_FILE = os.path.expanduser("~/.hermes/memories/MEMORY.md")
 BRIDGE_URL = "http://localhost:8083/msg"
 STATE_FILE = os.path.expanduser("~/.hermes/.nudge-watch-state")
+
+SENSITIVE_PATTERNS = [
+    r'sk-[a-zA-Z0-9]{20,}',          # API key
+    r'password\s*[:=]\s*\S+',         # password=xxx
+    r'pwd\s*[:=]\s*\S+',              # pwd=xxx
+    r'token\s*[:=]\s*\S+',            # token=xxx
+    r'secret\s*[:=]\s*\S+',           # secret=xxx
+    r'[a-zA-Z0-9]{32,}',              # 长随机字符串（32位以上）
+]
+
+def is_sensitive(text):
+    for pattern in SENSITIVE_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
 
 def main():
     try:
@@ -15,6 +30,14 @@ def main():
 
         lines = open(MEMORY_FILE).readlines()
         recent = "".join(lines[-8:]).strip()[-1000:]
+
+        if is_sensitive(recent):
+            ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+            print(f"[nudge-watch {ts}] sensitive content detected, discarded ({len(recent)} chars)")
+            # Still update state so we don't keep re-checking the same content
+            with open(STATE_FILE, "w") as f:
+                f.write(md5)
+            return
 
         payload = json.dumps({
             "from": "hermes-nudge",
